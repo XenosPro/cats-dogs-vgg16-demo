@@ -13,7 +13,8 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "cats_dogs_vgg16.keras"
 MAX_FILE_BYTES = 10 * 1024 * 1024
-MAX_IMAGE_PIXELS = 20_000_000
+MAX_IMAGE_PIXELS = 32_000_000  # Cap decoded image size for cloud safety.
+MAX_IMAGE_EDGE = 1600  # Downsize large photos before model inference.
 ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
 
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
@@ -38,6 +39,10 @@ def load_trained_model():
 
 
 def decode_uploaded_image(data: bytes) -> Image.Image:
+    """Validate uploads and safely downscale high-resolution images.
+
+    The model still performs its original 224x224 VGG16 preprocessing.
+    """
     if len(data) > MAX_FILE_BYTES:
         raise ValueError("Image exceeds the 10 MB upload limit.")
     try:
@@ -46,17 +51,30 @@ def decode_uploaded_image(data: bytes) -> Image.Image:
             with Image.open(BytesIO(data)) as test_image:
                 if test_image.format not in ALLOWED_FORMATS:
                     raise ValueError("Please upload a JPEG, PNG, or WEBP image.")
+                if test_image.width * test_image.height > MAX_IMAGE_PIXELS:
+                    raise ValueError("Image exceeds the 32-megapixel safety limit.")
                 test_image.verify()
+
             with Image.open(BytesIO(data)) as image:
-                if image.width * image.height > MAX_IMAGE_PIXELS:
-                    raise ValueError("Image is too large (20 million pixels maximum).")
+                # JPEG decoder can subsample before expanding large photos.
+                image.draft("RGB", (MAX_IMAGE_EDGE, MAX_IMAGE_EDGE))
                 corrected = ImageOps.exif_transpose(image)
+                corrected.thumbnail(
+                    (MAX_IMAGE_EDGE, MAX_IMAGE_EDGE),
+                    Image.Resampling.LANCZOS,
+                )
                 rgb = corrected.convert("RGB")
                 rgb.load()
                 return rgb
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError,
-            Image.DecompressionBombWarning) as exc:
-        raise ValueError("This image cannot be decoded safely. Try another JPG, PNG, or WEBP.") from exc
+    except (
+        UnidentifiedImageError,
+        OSError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ) as exc:
+        raise ValueError(
+            "This image cannot be decoded safely. Try another JPG, PNG, or WEBP."
+        ) from exc
 
 
 def dog_probability(model, image: Image.Image) -> float:
@@ -107,7 +125,7 @@ if not model_available:
 uploaded = st.file_uploader(
     "Choose a cat or dog image",
     type=["jpg", "jpeg", "png", "webp"],
-    help="JPEG, PNG, or WEBP; up to 10 MB and 20 megapixels.",
+    help="JPEG, PNG, or WEBP; up to 10 MB and 32 megapixels. Large photos are resized automatically.",
 )
 
 if uploaded is not None:
