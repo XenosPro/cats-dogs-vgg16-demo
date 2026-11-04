@@ -1,6 +1,7 @@
-"""Cats vs. Dogs live demo of the VGG16 model trained in transfer-learning_true.ipynb.
+"""Cats vs. Dogs V2: Stage 1 — transparent, limitation-aware prediction UI.
 
-Requires a separately exported full trained Keras model at models/cats_dogs_vgg16.keras.
+Requires the exported Keras model at models/cats_dogs_vgg16.keras.
+The original model loading, image validation, and VGG16 inference are unchanged.
 """
 
 from io import BytesIO
@@ -104,6 +105,11 @@ st.write(
     "**cat** or **dog**. The model was trained using transfer learning on "
     "the TensorFlow Datasets Cats vs. Dogs dataset."
 )
+st.info(
+    "**Designed for domestic cats and dogs only.** The model does not "
+    "recognize other species or objects, and it cannot currently reject "
+    "unsupported images. For example, a lion can still be labeled Cat or Dog."
+)
 
 with st.expander("How this model works", expanded=False):
     st.markdown(
@@ -152,18 +158,26 @@ if uploaded is not None:
 
     cat_prob = 1.0 - dog_prob
     predicted = "Dog 🐶" if dog_prob >= 0.5 else "Cat 🐱"
-    confidence = max(cat_prob, dog_prob)
+    selected_class_score = max(cat_prob, dog_prob)
 
-    st.success(f"Prediction: **{predicted}**")
-    st.metric("Model confidence", f"{confidence:.1%}")
+    st.subheader("Binary classification result")
+    st.write(f"**Model selected:** {predicted}")
+    st.metric("Selected-class model score", f"{selected_class_score:.1%}")
+    st.warning(
+        "**Important:** This score is **not a guarantee of correctness** "
+        "or the probability that the image truly contains this animal. "
+        "The model must choose Cat or Dog, even for lions, wolves, cars, "
+        "and other unsupported images. Unknown-image detection is not enabled yet."
+    )
+    st.write("**Scores across the two trained classes**")
     st.write(f"🐱 Cat — {cat_prob:.1%}")
     st.progress(cat_prob)
     st.write(f"🐶 Dog — {dog_prob:.1%}")
     st.progress(dog_prob)
     st.caption(
-        "Scores are model outputs, not calibrated guarantees. "
-        "This binary model will classify any supported image as cat or dog, "
-        "even if neither animal appears."
+        "These are outputs from a two-class sigmoid classifier, not calibrated "
+        "probabilities for arbitrary images. The app does not verify that "
+        "a cat or dog is actually present."
     )
 
 st.divider()
